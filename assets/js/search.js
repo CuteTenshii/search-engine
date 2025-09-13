@@ -1,21 +1,22 @@
 const searchResultsContainer = document.getElementById('search-results');
+const query = window.__INITIAL_STATE__.query_without_filters || '';
+const queryRegex = new RegExp(query.replaceAll(/[\s+]/g, '|'), 'gi');
 
 const urlToBreadcrumb = (url, breadcrumbs) => {
   const urlObj = new URL(url);
   const pathSegments = urlObj.pathname.split('/').filter(segment => segment);
-  const host = urlObj.protocol + '//' + urlObj.hostname;
+  const host = (urlObj.protocol + '//' + urlObj.hostname).replaceAll(queryRegex, (s) => `<b>${s}</b>`);
   if (breadcrumbs && breadcrumbs.length > 1) {
     return host + ' > ' + breadcrumbs.join(' > ');
   }
-  return host + (pathSegments.length ? ' > ' + pathSegments.join(' > ') : '');
+  return host + (pathSegments.length ? ' > ' + pathSegments.join(' > ').replaceAll(queryRegex, (s) => `<b>${s}</b>`) : '');
 }
 
-const query = window.__INITIAL_STATE__.query_without_filters || '';
 for (const results of window.__INITIAL_STATE__.results) {
   const resultElement = document.createElement('div');
   resultElement.classList.add('search-result');
-  const title = results.title ? results.title.replaceAll(new RegExp(query, 'gi'), (s) => `<b>${s}</b>`) : results.url;
-  const description = results.description ? results.description.replaceAll(new RegExp(query, 'gi'), (s) => `<b>${s}</b>`) : '<i>No description given</i>';
+  const title = results.title ? results.title.replaceAll(queryRegex, (s) => `<b>${s}</b>`) : results.url;
+  const description = results.description ? results.description.replaceAll(queryRegex, (s) => `<b>${s}</b>`) : '<i>No description given</i>';
 
   resultElement.innerHTML = `
   <a href="${results.url}" class="search-result-header">

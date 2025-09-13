@@ -19,13 +19,18 @@
         {{resultsCount}} results found for "{{query}}"
     </p>
 </div>
+<div class="text-center">
+    {{prevPageLink}}
+    Page {{currentPage}} / {{totalPages}}
+    {{nextPageLink}}
+</div>
 <div id="search-results"></div>
 <script>
     window.__INITIAL_STATE__ = {
         query: "{{query}}",
         query_without_filters: "{{queryWithoutFilters}}",
         results: {{results}}
-    };
+    }
 </script>
 <script src="/assets/js/search.js"></script>
 </body>

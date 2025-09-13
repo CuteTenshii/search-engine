@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Crawl</title>
+</head>
+<body>
+<div class="alert"></div>
+<form method="post">
+    <input type="text" name="url" placeholder="Enter URL to crawl" required>
+    <label for="ignoreExternal">
+        <input type="checkbox" name="ignoreExternal" id="ignoreExternal" checked>
+        Ignore external links (other domains)
+    </label>
+    <label for="force">
+        <input type="checkbox" name="force" id="force">
+        Force re-crawl
+    </label>
+    <button type="submit">Crawl</button>
+</form>
+<script>
+  const al = (msg) => {
+        const alertDiv = document.querySelector('.alert');
+        alertDiv.textContent = msg;
+        alertDiv.style.display = 'block';
+  }
+    document.querySelector('form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const form = e.target;
+        fetch('/crawl', {
+            method: 'POST',
+            body: new FormData(form),
+        })
+          .then(data => {
+            if (!data.ok)
+                throw new Error('Network response was not ok');
+              al('Crawl initiated. Check server logs for progress.');
+          })
+          .catch(error => {
+              console.error('Error:', error);
+              al('An error occurred while initiating the crawl.');
+          });
+    });
+</script>
+</body>
+</html>

@@ -1,8 +1,8 @@
-import Elysia, {file} from "elysia";
+import Elysia, {file, t} from "elysia";
 import {html} from "@elysiajs/html";
 import { BunFile } from "bun";
-import {getAllCrawledUrls, getSearchResults} from "./db";
-import {crawledUrls, crawlPage} from "./crawl";
+import {countResults, getAllCrawledUrls, getSearchResults, getStats} from "./db";
+import {crawledUrls, crawlPage} from "./crawler/crawler";
 import * as path from "node:path";
 import {htmlEscape} from "./utils";
 
@@ -12,26 +12,67 @@ new Elysia()
   .get("/assets/*", ({ params }) => file(`assets/${params['*']}`))
   .get("/search", async ({query}) => {
     const fileContent = await (file(`pages/search.html`).value as BunFile).text();
-    const results = getSearchResults(query.q);
+    const page = parseInt(query.page || '1') || 1;
+    const results = getSearchResults(query.q, page);
+    const count = countResults(query.q);
 
     return fileContent
       .replaceAll("{{query}}", htmlEscape(results.queryWithFilters))
       .replaceAll("{{queryWithoutFilters}}", htmlEscape(results.queryWithoutFilters))
-      .replaceAll("{{resultsCount}}", String(results.results.length))
-      .replaceAll("{{results}}", JSON.stringify(results.results));
+      .replaceAll("{{resultsCount}}", String(count.results.toLocaleString()))
+      .replaceAll("{{currentPage}}", String(page))
+      .replaceAll("{{totalPages}}", String(count.pages))
+      .replaceAll("{{results}}", JSON.stringify(results.results))
+      .replaceAll("{{prevPageLink}}", page > 1 ? `<a href="/search?q=${encodeURIComponent(results.queryWithFilters)}&page=${page - 1}">Previous</a>` : "")
+      .replaceAll("{{nextPageLink}}", page < count.pages ? `<a href="/search?q=${encodeURIComponent(results.queryWithFilters)}&page=${page + 1}">Next</a>` : "")
+    ;
   })
-  .get("/crawl", ({query}) => {
-    const url = query.url as string;
+  .get("/crawl", () => file('pages/crawl.html'))
+  .post("/crawl", ({body}) => {
+    const url = body.url as string;
     if (!url) return "Please provide a URL to start crawling.";
-    const ignoreExternal = query.ignoreExternal === 'true';
+    const ignoreExternal = body.ignoreExternal === 'on';
+    const force = body.force === 'on';
     const crawledUrlss = getAllCrawledUrls();
-    for (const crawledUrl of crawledUrlss) {
-      crawledUrls.add(crawledUrl);
+    if (crawledUrlss.length > 0) {
+      for (const crawledUrl of crawledUrlss) {
+        crawledUrls.add(crawledUrl);
+      }
+      console.log(`Already crawled ${crawledUrls.size} URLs from database.`);
     }
-    console.log(`Already crawled ${crawledUrls.size} URLs from database.`);
-    console.log(`Starting crawl at ${url}, ignoreExternal=${ignoreExternal}`);
+    console.log(`Starting crawl at ${url}, ignoreExternal=${ignoreExternal}, force=${force}`);
 
-    crawlPage(url, ignoreExternal);
+    crawlPage(url, {
+      ignoreExternal,
+      force,
+    });
+  }, {
+    body: t.Object({
+      url: t.String(),
+      ignoreExternal: t.Optional(t.String()),
+      force: t.Optional(t.String()),
+    }),
+  })
+  .get("/stats", () => {
+    const stats = getStats();
+
+    return `
+      <h1>Database Stats</h1>
+      <p>Total pages crawled: ${stats.totalPages.toLocaleString()}</p>
+      <p>Hostnames crawled: ${stats.hostnames.length.toLocaleString()}</p>
+      <ul>
+        ${stats.hostnames.map(h => `<li>${h.hostname} - ${h.count.toLocaleString()} pages</li>`).join("")}
+      </ul>
+      <p>Languages detected: ${stats.languages.length.toLocaleString()}</p>
+      <ul>
+        ${stats.languages.map(l => `<li>${l.language || 'Unknown'} - ${l.count.toLocaleString()} pages</li>`).join("")}
+      </ul>
+      <p>Authors detected: ${stats.authors.length.toLocaleString()}</p>
+      <ul>
+        ${stats.authors.map(a => `<li>${a.author || 'Unknown'} - ${a.count.toLocaleString()} pages</li>`).join("")}
+      </ul>
+      <a href="/">Go back</a>
+    `;
   })
   .get("/proxy/favicon", async ({query}) => {
     let url = query.url as string;

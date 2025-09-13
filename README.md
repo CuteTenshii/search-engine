@@ -7,8 +7,8 @@ bun run src/index.ts
 ```
 
 Then open your browser and go to `http://localhost:3000`.
-
-To start crawling, go to `http://localhost:3000/crawl?url=<URL>`. To ignore external links (links that point to a different domain), use `http://localhost:3000/crawl?url=<URL>&ignoreExternal=true`.
+To start crawling, go to `http://localhost:3000/crawl`.
+You can also view crawler stats at `http://localhost:3000/stats`.
 
 ## Crawled data
 
@@ -29,6 +29,7 @@ Each time a page is crawled, its information is updated in the database. Here's 
 | updated_at     | The date the page was last updated       | The current date when the page is crawled                                                                                                                         |
 | site_url       | The `og:site_name` meta tag or app name  | `og:site_name` meta tag or the app name if not available                                                                                                          |
 | language       | The language of the page                 | `<html lang="">` attribute, `og:locale` meta tag                                                                                                                  |
+| breadcrumbs    | The breadcrumbs of the page              | `BreadcrumbList` schema in LD+JSON scripts                                                                                                                        |
 
 ### Android/iOS apps
 
@@ -47,3 +48,7 @@ If the page contains LD+JSON scripts, the following schemas are extracted from t
 To circumvent issues when fetching favicons, this project proxies favicon requests through a dedicated endpoint. This ensures that favicons are always accessible and correctly displayed, regardless of the original source's restrictions or configurations.
 
 Also, for caching purposes, the favicons are stored in the `favicons` directory.
+
+## Client-Side Rendering
+
+For pages that rely heavily on JavaScript for rendering content, the crawler utilizes a headless browser to ensure that all dynamic content is fully loaded and accessible. This approach guarantees that the extracted data is comprehensive and accurate, reflecting the true state of the webpage as seen by users.

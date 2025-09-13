@@ -9,7 +9,10 @@ export default class SQLBuilder {
   private table: string;
   private readonly conditions: string[];
   private limitCount: number | null;
+  private offsetCount: number | null;
   private readonly jsonColumns: Set<string>;
+  private groupByColumn: string | null;
+  private orderByColumn: string | null;
 
   constructor() {
     this.action = null;
@@ -18,9 +21,12 @@ export default class SQLBuilder {
     this.table = "";
     this.conditions = [];
     this.limitCount = null;
+    this.offsetCount = null;
     this.jsonColumns = new Set<string>([
       'breadcrumbs', 'keywords',
     ]);
+    this.groupByColumn = null;
+    this.orderByColumn = null;
   }
 
   select(columns: string[]): SQLBuilder {
@@ -84,6 +90,22 @@ export default class SQLBuilder {
     return this;
   }
 
+  offset(count: number): SQLBuilder {
+    this.offsetCount = count;
+    return this;
+  }
+
+  groupBy(column: string): SQLBuilder {
+    this.groupByColumn = column;
+    return this;
+  }
+
+  orderBy(column: string, direction: 'ASC' | 'DESC' = 'ASC'): SQLBuilder {
+    if (!column.includes(' ')) column = `"${column}"`;
+    this.orderByColumn = `${column} ${direction}`;
+    return this;
+  }
+
   raw(sql: string): SQLBuilder {
     this.conditions.push(sql);
     return this;
@@ -94,9 +116,8 @@ export default class SQLBuilder {
   }
 
   run(): any {
-    if (!this.action || !this.table || this.columns.length === 0) {
+    if (!this.action || !this.table || this.columns.length === 0)
       throw new Error('Incomplete SQL statement');
-    }
     const stmt = db.prepare(this.toString());
     if (this.action === 'SELECT') {
       const results = stmt.all(...this.getParams());
@@ -119,17 +140,30 @@ export default class SQLBuilder {
 
   toString(): string {
     let sql = '';
+    const cols = this.columns.map(col => {
+      if (col.includes(' ')) return col;
+      return `"${col}"`;
+    });
     if (this.action === 'SELECT') {
-      sql = `${this.action} "${this.columns.join('","')}" FROM "${this.table}"`;
+      sql = `${this.action} ${cols.join(',')} FROM "${this.table}"`;
     } else if (this.action === 'INSERT' || this.action === 'INSERT OR REPLACE') {
-      sql = `${this.action} INTO "${this.table}" ("${this.columns.join('","')}") VALUES (${this.columns.map(() => '?').join(',')})`;
+      sql = `${this.action} INTO "${this.table}" (${cols.join(',')}) VALUES (${this.columns.map(() => '?').join(',')})`;
     }
     if (!sql) throw new Error('Incomplete SQL statement');
     for (const condition of this.conditions) {
       sql += ` ${condition}`;
     }
+    if (this.groupByColumn) {
+      sql += ` GROUP BY ${this.groupByColumn}`;
+    }
+    if (this.orderByColumn) {
+      sql += ` ORDER BY ${this.orderByColumn}`;
+    }
     if (this.limitCount !== null) {
       sql += ` LIMIT ${this.limitCount}`;
+    }
+    if (this.offsetCount !== null) {
+      sql += ` OFFSET ${this.offsetCount}`;
     }
     return sql.trim();
   }

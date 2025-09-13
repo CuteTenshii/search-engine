@@ -1,12 +1,24 @@
 export function ldJsonToObject(ldJson: string[]): Output {
+  ldJson = ldJson.map(s => {
+    return s
+      // Remove JSON comments
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/\s.*/g, '')
+      // Minify
+      .replaceAll(/[\n\r\t]+/g, ' ')
+      .replaceAll(/\s+/g, ' ')
+      .trim()
+    ;
+  }).filter(s => s.length > 0);
+
   try {
-    const json = JSON.parse(`[${ldJson.join(",")}]`) as LDJson[];
+    const json = JSON.parse(`[${ldJson.join(",")}]`) as LdJson[];
     const results: Output = {};
     for (const item of json) {
       if (item["@type"] === "BreadcrumbList" && Array.isArray(item.itemListElement)) {
         results.breadcrumbs = item.itemListElement
           .map(el => typeof el === 'string' ? null : el)
-          .filter((el): el is LDJson & {
+          .filter((el): el is LdJson & {
             position: number;
             name: string;
             url?: string;
@@ -14,9 +26,8 @@ export function ldJsonToObject(ldJson: string[]): Output {
           .sort((a, b) => a.position - b.position)
           .map(el => el.name);
       } else if (item["@type"] === "Article") {
-        if (item.datePublished && !results.datePublished) {
+        if (item.datePublished && !results.datePublished)
           results.datePublished = new Date(item.datePublished).toISOString();
-        }
         if (item.author && !results.author) {
           if (typeof item.author === 'string') {
             results.author = item.author;
@@ -27,12 +38,12 @@ export function ldJsonToObject(ldJson: string[]): Output {
             }
           }
         }
+        if (item.headline && !results.headline) results.headline = item.headline;
       }
     }
     return results;
   } catch (e) {
-    console.error(e);
-    return {};
+    throw e;
   }
 }
 
@@ -43,10 +54,10 @@ interface Output {
   headline?: string;
 }
 
-interface LDJson {
+interface LdJson {
   "@context"?: string;
   "@type"?: LDJsonType | LDJsonType[];
-  itemListElement?: (LDJson | string)[];
+  itemListElement?: (LdJson | string)[];
   position?: number;
   name?: string;
   description?: string;
@@ -80,9 +91,9 @@ interface LDJson {
   eventAttendanceMode?: string;
   performer?: { "@type": "Person" | "Organization"; name: string; url?: string; } | ({ "@type": "Person" | "Organization"; name: string; url?: string; } | string)[];
   audience?: { "@type": "Audience"; audienceType: string; };
-  hasPart?: LDJson | LDJson[];
-  isPartOf?: LDJson | LDJson[];
-  citation?: string | LDJson | (string | LDJson)[];
+  hasPart?: LdJson | LdJson[];
+  isPartOf?: LdJson | LdJson[];
+  citation?: string | LdJson | (string | LdJson)[];
   sameAs?: string | string[];
   additionalType?: string;
   alternateName?: string;
