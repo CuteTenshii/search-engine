@@ -1,0 +1,30 @@
+header {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    padding: 10px 20px;
+}
+
+.search-result {
+    background-color: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    padding: 20px;
+    margin: 20px auto;
+    max-width: 800px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.search-result-header {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.search-result-favicon {
+    width: 32px;
+    height: 32px;
+}

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Search results for "{{query}}"</title>
+    <link rel="stylesheet" href="/assets/css/style.css">
+    <link rel="stylesheet" href="/assets/css/search.css">
+</head>
+<body>
+<header>
+    <form action="/search" method="get">
+        <input type="text" name="q" value="{{query}}" required>
+        <button type="submit">Search</button>
+    </form>
+</header>
+<div class="text-center">
+    <p>
+        {{resultsCount}} results found for "{{query}}"
+    </p>
+</div>
+<div id="search-results"></div>
+<script>
+    window.__INITIAL_STATE__ = {
+        query: "{{query}}",
+        query_without_filters: "{{queryWithoutFilters}}",
+        results: {{results}}
+    };
+</script>
+<script src="/assets/js/search.js"></script>
+</body>
+</html>
