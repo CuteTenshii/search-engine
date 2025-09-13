@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite';
 import SQLBuilder from "./SQLBuilder";
+import {htmlEscape} from "./utils";
 
 const db = new Database('crawler.db');
 
@@ -19,7 +20,7 @@ export function getSearchResults(query: string): {
   queryWithoutFilters: string;
 } {
   let sql = new SQLBuilder().select([
-    'url', 'title', 'description', 'author', 'favicon', 'date_published', 'site_name'
+    'url', 'title', 'description', 'author', 'favicon', 'date_published', 'site_name', 'breadcrumbs',
   ]).from('pages').limit(100);
   const siteFilter = query.match(/site:(\S+)/);
   if (siteFilter) {
@@ -40,9 +41,12 @@ export function getSearchResults(query: string): {
       .raw(')');
   }
 
-  const stmt = db.prepare(sql.toString());
+  const results = sql.run() as unknown as any[];
   return {
-    results: stmt.all(...sql.getParams()) as any,
+    results: results.map((row: any) => ({
+      ...row,
+      description: row.description ? htmlEscape(row.description) : null,
+    })),
     queryWithFilters: query,
     queryWithoutFilters: query.replace(/site:(\S+)/, '').replace(/lang:(\S+)/, '').trim(),
   }

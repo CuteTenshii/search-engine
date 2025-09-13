@@ -1,10 +1,13 @@
 import * as cheerio from "cheerio";
 import db from "./db";
 import flareSolverr from "./flaresolverr";
+import {ldJsonToObject} from "./ldjson";
+import SQLBuilder from "./SQLBuilder";
 
 export const crawledUrls = new Set<string>();
 const manifestCache = new Map<string, any>();
 const cfCookies = new Map<string, string>();
+const faviconCache = new Map<string, boolean>();
 export async function crawlPage(url: string, ignoreExternal = true) {
   url = cleanURL(url);
   if (crawledUrls.has(url) || crawledUrls.has(url + "/")) return;
@@ -54,10 +57,8 @@ export async function crawlPage(url: string, ignoreExternal = true) {
   // res.url is the final URL after redirects
   const metadata = await getPageMetadata($, res.url);
   console.log(`Crawled: ${url} - Title: ${metadata.title}`);
-  db
-    .prepare(`INSERT OR REPLACE INTO pages (url, title, description, keywords, author, favicon, date_published, site_name, language) 
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(
+  new SQLBuilder()
+    .insertOrReplace(["url", "title", "description", "keywords", "author", "favicon", "date_published", "site_name", "language", "breadcrumbs"], [
       metadata.url,
       metadata.title,
       metadata.description,
@@ -67,7 +68,10 @@ export async function crawlPage(url: string, ignoreExternal = true) {
       metadata.datePublished,
       metadata.siteName,
       metadata.language,
-  );
+      JSON.stringify(metadata.breadcrumbs),
+    ])
+    .into("pages")
+    .run();
 
   const links = $("a[href]")
     .get()
@@ -75,16 +79,22 @@ export async function crawlPage(url: string, ignoreExternal = true) {
       try {
         const href = $(el).attr("href");
         if (!href) return false;
-        if (
-          href.startsWith("https://store.steampowered.com/login/")
-        ) return false;
-        if (
-          href.startsWith("mailto:") || href.startsWith("tel:") ||
-          href.startsWith("javascript:") || href.startsWith("#")
-        ) return false;
-        const url = new URL(href, res.url);
-        if (ignoreExternal && url.hostname !== new URL(res.url).hostname) return false;
-        return url.protocol === "http:" || url.protocol === "https:";
+        // Ignore links that are just the same URL with different fragments or trailing slashes
+        if (url === href || url + "/" === href || (url.endsWith("/") && url.slice(0, -1) === href)) return false;
+        // Ignore Steam login links, because they create infinite loops to themselves, due to the first link on the page being /login/?redir=...
+        if (href.startsWith("https://store.steampowered.com/login/")) return false;
+        const parsedUrl = new URL(href, res.url);
+
+        const ignoredPaths = [
+          '/cdn-cgi/l/email-protection', // Cloudflare email protection links
+        ];
+        if (ignoredPaths.includes(parsedUrl.pathname)) return false;
+
+        // Ignore non-http(s) links
+        if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") return false;
+        if (ignoreExternal && parsedUrl.hostname !== new URL(res.url).hostname) return false;
+
+        return true;
       } catch {
         return false;
       }
@@ -104,6 +114,7 @@ export async function getPageMetadata($: cheerio.CheerioAPI, url: string) {
     url).toString();
   const manifestLink = $('link[rel="manifest"]').attr("href");
   const manifestData = manifestLink ? await fetchManifest(new URL(manifestLink, goodUrl).toString()) : null;
+  const ldJson = ldJsonToObject($('script[type="application/ld+json"]').get().map(s => $(s).html() || ""));
   const siteName = $('meta[property="og:site_name"]').attr("content") ||
     manifestData?.short_name || manifestData?.name ||
     $('meta[name="application-name"]').attr("content") ||
@@ -115,6 +126,7 @@ export async function getPageMetadata($: cheerio.CheerioAPI, url: string) {
     $('meta[name="twitter:title"]').attr("content") ||
     $('h1').first().text() ||
     headTitle || // in case siteName === headTitle but the other tags are empty
+    manifestData?.short_name || manifestData?.name || // last resort
     null;
   const description =
     $('meta[name="description"]').attr("content") ||
@@ -129,12 +141,14 @@ export async function getPageMetadata($: cheerio.CheerioAPI, url: string) {
   const author =
     $('meta[name="author"]').attr("content") ||
     $('meta[property="article:author"]').attr("content") ||
+    ldJson.author ||
     null;
   const favicon =
     $('link[rel="icon"]').attr("href") ||
     $('link[rel="shortcut icon"]').attr("href") ||
     $('link[rel="apple-touch-icon"]').attr("href") ||
     manifestData?.icons?.[0]?.src ||
+    (await isFaviconIcoExists(goodUrl) ? "/favicon.ico" : null) ||
     null;
   const datePublished =
     $('meta[property="article:published_time"]').attr("content") ||
@@ -145,25 +159,79 @@ export async function getPageMetadata($: cheerio.CheerioAPI, url: string) {
   const language = $('html').attr("lang") ||
     $('meta[property="og:locale"]').attr("content") ||
     null;
+  const appStoreId =
+    $('meta[name="apple-itunes-app"]').attr("content")?.match(/app-id=(\d+)/)?.[1] ||
+    null;
+  const playStoreId =
+    $('meta[name="google-play-app"]').attr("content")?.match(/app-id=([\w.]+)/)?.[1] ||
+    manifestData?.related_applications?.find(app => app.platform === 'play')?.id ||
+    null;
 
   return {
     url: cleanURL(goodUrl),
-    title: title ? title.trim().replaceAll(/\s+/g, ' ') : null,
-    description: description ? description.trim().replaceAll(/\s+/g, ' ') : null,
+    title: title ? title.trim().replaceAll(/\s+/g, ' ').trim() : null,
+    description: description ? description.trim().replaceAll(/\s+/g, ' ').trim() : null,
     keywords: keywords ? keywords.split(",").map(k => k.trim()) : [],
     author,
     favicon: favicon ? new URL(favicon, goodUrl).toString() : null,
     datePublished: datePublished ? new Date(datePublished).toISOString() : null,
     siteName,
-    language
+    language,
+    breadcrumbs: ldJson.breadcrumbs || [],
+    appStoreId,
+    playStoreId,
   };
 }
 
-function cleanURL(url: string) {
+async function isFaviconIcoExists(url: string) {
   try {
     const u = new URL(url);
-    u.hash = "";
+    u.pathname = "/favicon.ico";
     u.search = "";
+    u.hash = "";
+    if (faviconCache.has(u.hostname)) return faviconCache.get(u.hostname);
+    const res = await fetch(u.toString(), {method: "HEAD"});
+    const contentType = res.headers.get("content-type") || "";
+    const ok = res.ok && contentType.startsWith("image/");
+    faviconCache.set(u.hostname, ok);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+function cleanURL(url: string) {
+  // Remove tracking parameters from known hostnames. Makes it so it doesn't crawl the same page multiple times with different params etc.
+  // This is not exhaustive, just some common ones. Also, no need for parameters already in globalIgnoreParams, they will be removed anyway.
+  const ignoreParamsPerHostname: Record<string, string[]> = {
+    "www.youtube.com": ["feature"], // e.g. ?feature=share, ?feature=emb_logo
+    "x.com": ["s", "t"], // e.g. x.com/username?s=20
+    "twitter.com": ["s", "t"], // same as above
+    "reddit.com": ["utm_source", "utm_medium", "utm_name", "utm_content", "utm_term", "context"], // e.g. ?utm_source=share&utm_medium=web2x&context=3
+    "medium.com": ["source", "sk"], // e.g. ?source=your_stories_page-----abc123-----&sk=abc123
+    "www.linkedin.com": ["trk", "original_referer", "sessionId"], // e.g. ?trk=public_profile_browsemap&original_referer=https%3A%2F%2Fwww.google.com%2F
+    "store.steampowered.com": ["snr"], // e.g. ?snr=1_7_7_230_150_1
+  };
+  const globalIgnoreParams = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "fbclid"];
+
+  try {
+    const u = new URL(url);
+    // Remove fragment
+    u.hash = "";
+
+    const ignoreParams = ignoreParamsPerHostname[u.hostname] || [];
+    for (const param of [...ignoreParams, ...globalIgnoreParams]) {
+      u.searchParams.delete(param);
+    }
+    // Remove empty search
+    if (Object.keys(u.searchParams).length === 0) {
+      u.search = "";
+    }
+    // Ensure pathname is not empty
+    if (u.pathname === "") {
+      u.pathname = "/";
+    }
+
     return u.toString();
   } catch {
     return url;
@@ -179,7 +247,11 @@ function getMainContent($: cheerio.CheerioAPI) {
 
   const selectors = ["article", "[role=article]", "main", "[role=main]", "body"];
   for (const selector of selectors) {
-    const el = $(selector + ":not([style*='display:none']):not([hidden]):not(script):not(noscript):not(style):not([style*='visibility:hidden']):not([aria-hidden='true'])").first();
+    const el = $(selector).first().clone();
+    el.find([
+      "script", "head", "style", "[hidden]", "[aria-hidden='true']", "[style*='display:none']", "[style*='visibility:hidden']",
+      "next-route-announcer",
+    ].join(',')).remove();
     const text = el.text();
     if (!text) continue;
     const processed = process(text);
@@ -193,7 +265,12 @@ interface Manifest {
   name: string|null,
   short_name: string|null,
   description: string|null,
-  icons: {src: string, sizes: string, type: string}[]
+  icons: {src: string, sizes: string, type: string}[];
+  related_applications: {
+    platform: 'play' | string;
+    url: string;
+    id: string;
+  }[];
 }
 
 async function fetchManifest(url: string): Promise<Manifest|null> {

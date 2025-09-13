@@ -4,17 +4,7 @@ import { BunFile } from "bun";
 import {getAllCrawledUrls, getSearchResults} from "./db";
 import {crawledUrls, crawlPage} from "./crawl";
 import * as path from "node:path";
-import flareSolverr from "./flaresolverr";
-import {Blob} from "buffer";
-
-function htmlEscape(str: string) {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
+import {htmlEscape} from "./utils";
 
 new Elysia()
   .use(html())
@@ -28,10 +18,7 @@ new Elysia()
       .replaceAll("{{query}}", htmlEscape(results.queryWithFilters))
       .replaceAll("{{queryWithoutFilters}}", htmlEscape(results.queryWithoutFilters))
       .replaceAll("{{resultsCount}}", String(results.results.length))
-      .replaceAll("{{results}}", JSON.stringify(results.results.map(r => ({
-        ...r,
-        description: r.description ? htmlEscape(r.description) : null,
-      }))));
+      .replaceAll("{{results}}", JSON.stringify(results.results));
   })
   .get("/crawl", ({query}) => {
     const url = query.url as string;

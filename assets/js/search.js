@@ -1,9 +1,13 @@
 const searchResultsContainer = document.getElementById('search-results');
 
-const urlToBreadcrumb = (url) => {
+const urlToBreadcrumb = (url, breadcrumbs) => {
   const urlObj = new URL(url);
   const pathSegments = urlObj.pathname.split('/').filter(segment => segment);
-  return urlObj.protocol + '//' + urlObj.hostname + (pathSegments.length ? ' > ' + pathSegments.join(' > ') : '');
+  const host = urlObj.protocol + '//' + urlObj.hostname;
+  if (breadcrumbs && breadcrumbs.length > 1) {
+    return host + ' > ' + breadcrumbs.join(' > ');
+  }
+  return host + (pathSegments.length ? ' > ' + pathSegments.join(' > ') : '');
 }
 
 const query = window.__INITIAL_STATE__.query_without_filters || '';
@@ -18,7 +22,7 @@ for (const results of window.__INITIAL_STATE__.results) {
     <img src="/proxy/favicon?url=${btoa(results.favicon)}" alt="${results.site_name || results.title}" class="search-result-favicon" />
     <div class="ellipsis">
       <p>${results.site_name || ''}</p>
-      <span class="ellipsis">${results.breadcrumb || urlToBreadcrumb(results.url)}</span>
+      <span class="ellipsis">${urlToBreadcrumb(results.url, results.breadcrumbs)}</span>
     </div>
   </a>
   <p><a href="${results.url}">${title}</a></p>
